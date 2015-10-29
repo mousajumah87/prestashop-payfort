@@ -14,7 +14,10 @@
                     </p>
                 </p>
             </div>
-            {$payfort_form}
+            <form id="payfortpaymentform" style="display:none" name="payfortpaymentform" id="payfortpaymentform" method="post" action="{$url}">
+                <input name="form" value="{$payfort_form}">
+                <input type="submit"/>
+            </form>
         </div>
     </div>
 </div>

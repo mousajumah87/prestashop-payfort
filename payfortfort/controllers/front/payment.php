@@ -35,7 +35,33 @@ class PayfortfortPaymentModuleFrontController extends ModuleFrontController
      
 	public function postProcess()
 	{
-        if (isset($_GET['response_code']) && isset($_GET['merchant_reference'])){
+        if (isset($_POST['form'])){
+            //set as pending order
+            $cart = $this->context->cart;
+            $customer = new Customer($cart->id_customer);
+            if (!Validate::isLoadedObject($customer))
+                Tools::redirect('index.php?controller=order&step=1');
+
+            $currency = $this->context->currency;
+
+            $total = (float)$cart->getOrderTotal(true, Cart::BOTH);
+            $mailVars = array();
+
+            $this->module->validateOrder($cart->id, 3, $total, $this->module->displayName, NULL, $mailVars, (int)$currency->id, false, $customer->secure_key);
+            
+            echo '<html>';
+            echo '<head><script src="https://code.jquery.com/jquery-1.11.3.min.js"></script>';
+            echo '</head>';
+            echo '<body>';
+            echo 'Redirecting to PayFort ....';
+            echo base64_decode($_POST['form']);
+            echo '</body>';
+            echo '<script>$(document).ready(function(){$("#payfortpaymentform input[type=submit]").click();})</script>';
+            echo '</html>';
+            die();
+        }
+        
+        elseif (isset($_GET['response_code']) && isset($_GET['merchant_reference'])){
             
             $success = false;
             $params = $_GET;
@@ -43,7 +69,6 @@ class PayfortfortPaymentModuleFrontController extends ModuleFrontController
             $signature = $_GET['signature'];
             
             unset($params['signature']);
-            unset($params['_s']);
             unset($params['fc']);
             unset($params['module']);
             unset($params['controller']);
@@ -67,7 +92,7 @@ class PayfortfortPaymentModuleFrontController extends ModuleFrontController
                 $status             = $params['status'];
                 
                 if (substr($response_code, 2) != '000'){
-                    Tools::redirect('index.php?controller=order&step=1');
+                    $success = false;
                 }
                 else{
                     $success = true;
@@ -92,11 +117,7 @@ class PayfortfortPaymentModuleFrontController extends ModuleFrontController
 
                     $currency = $this->context->currency;
                     $total = (float)$cart->getOrderTotal(true, Cart::BOTH);
-                    $mailVars = array(
-                        // '{bankwire_owner}' => Configuration::get('BANK_WIRE_OWNER'),
-                        // '{bankwire_details}' => nl2br(Configuration::get('BANK_WIRE_DETAILS')),
-                        // '{bankwire_address}' => nl2br(Configuration::get('BANK_WIRE_ADDRESS'))
-                    );
+                    $mailVars = array();
 
                     $this->module->validateOrder($cart->id, Configuration::get('PAYFORT_FORT_HOLD_REVIEW_OS'), $total, $this->module->displayName, NULL, $mailVars, (int)$currency->id, false, $customer->secure_key);
                     Tools::redirect('index.php?controller=order-confirmation&id_cart='.$cart->id.'&id_module='.$this->module->id.'&id_order='.$this->module->currentOrder.'&key='.$customer->secure_key);
@@ -104,7 +125,13 @@ class PayfortfortPaymentModuleFrontController extends ModuleFrontController
             }
             
             if (!$success){
-                Tools::redirect('index.php?controller=order&step=1');
+                //$this->module->validateOrder($cart->id, 6, $total, $this->module->displayName, NULL, $mailVars, (int)$currency->id, false, $customer->secure_key);
+                $objOrder = new Order($params['merchant_reference']);
+                $history = new OrderHistory();
+                $history->id_order = (int)$objOrder->id;
+                $history->changeIdOrderState(8, (int)($objOrder->id)); //order status=3
+                //Tools::redirect('index.php?controller=order&step=1');
+                Tools::redirect('index.php');
             }
             
         }

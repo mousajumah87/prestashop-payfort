@@ -87,6 +87,7 @@ class PayfortFORT extends PaymentModule {
                 Configuration::updateValue('PAYFORT_FORT_COMMAND', 'AUTHORIZATION') &&
                 Configuration::updateValue('PAYFORT_HASH_ALGORITHM', 'SHA1') &&
                 Configuration::updateValue('PAYFORT_FORT_HOLD_REVIEW_OS', _PS_OS_ERROR_);
+                
     }
 
     public function uninstall() {
@@ -229,18 +230,35 @@ class PayfortFORT extends PaymentModule {
         $this->context->smarty->assign('amount', $amount_in_cents);
         $this->context->smarty->assign('isFailed', $isFailed);
         
+        $cart = $this->context->cart;
+     
         $post_data = array(
             'amount'                => $amount_in_cents,
             'currency'              => strtoupper($currency->iso_code),
             'merchant_identifier'   => Configuration::get('PAYFORT_FORT_MERCHANT_IDENTIFIER'),
             'access_code'           => Configuration::get('PAYFORT_FORT_ACCESS_CODE'),
-            'merchant_reference'    => $params['cart']->id,
+            'merchant_reference'    => $cart->id,
             'customer_email'        => $customer->email,
             'command'               => Configuration::get('PAYFORT_FORT_COMMAND'),
             'language'              => Configuration::get('PAYFORT_FORT_LANGUAGE'),
             'return_url'            => $url
         );
         
+        
+        if ($cart->id_customer == 0 || $cart->id_address_delivery == 0 || $cart->id_address_invoice == 0)
+            Tools::redirect('index.php?controller=order&step=1');
+
+        // Check that this payment option is still available in case the customer changed his address just before the end of the checkout process
+        $authorized = false;
+        foreach (Module::getPaymentModules() as $module)
+        if ($module['name'] == 'payfortfort')
+        {
+            $authorized = true;
+            break;
+        }
+        if (!$authorized)
+            die($this->module->l('This payment method is not available.', 'validation'));
+
         //calculate request signature
         $sha_string = '';
         ksort($post_data);
@@ -261,7 +279,8 @@ class PayfortFORT extends PaymentModule {
         $form .= '<input type="submit" value="" id="submit" name="submit2">';
 
         $this->context->smarty->assign('x_invoice_num', (int) $params['cart']->id);
-        $this->context->smarty->assign('payfort_form', $form);
+        $this->context->smarty->assign('payfort_form', base64_encode($form));
+        $this->context->smarty->assign('url', $url);
         return $this->display(__FILE__, 'views/templates/hook/payfortfort.tpl');
     }
     
