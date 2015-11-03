@@ -32,12 +32,14 @@ class PayfortfortPaymentModuleFrontController extends ModuleFrontController
 	/**
 	 * @see FrontController::postProcess()
 	 */
-     
+          
 	public function postProcess()
 	{
+
         if (isset($_POST['form'])){
             //set as pending order
             $cart = $this->context->cart;
+
             $customer = new Customer($cart->id_customer);
             if (!Validate::isLoadedObject($customer))
                 Tools::redirect('index.php?controller=order&step=1');
@@ -47,14 +49,79 @@ class PayfortfortPaymentModuleFrontController extends ModuleFrontController
             $total = (float)$cart->getOrderTotal(true, Cart::BOTH);
             $mailVars = array();
 
+            
+            $invoiceAddress = new Address((int) $cart->id_address_invoice);
+            $amount = number_format((float) $cart->getOrderTotal(true, 3), 2, '.', '');
+            $amount_in_cents = $amount * 100;
+
             $this->module->validateOrder($cart->id, 3, $total, $this->module->displayName, NULL, $mailVars, (int)$currency->id, false, $customer->secure_key);
             
+            $url = _PS_BASE_URL_ . __PS_BASE_URI__ . 'index.php?fc=module&module=payfortfort&controller=payment';
+            
+            $sandbox_mode = Configuration::get('PAYFORT_FORT_SANDBOX_MODE');
+            
+            if ($sandbox_mode){
+                $gateway_url = 'https://sbcheckout.payfort.com/FortAPI/paymentPage';
+            }
+            else{
+                $gateway_url = 'https://checkout.payfort.com/FortAPI/paymentPage';
+            }
+            
+            $objOrder = new Order($this->module->currentOrder);
+            
+            $post_data = array(
+                'amount'                => $amount_in_cents,
+                'currency'              => strtoupper($currency->iso_code),
+                'merchant_identifier'   => Configuration::get('PAYFORT_FORT_MERCHANT_IDENTIFIER'),
+                'access_code'           => Configuration::get('PAYFORT_FORT_ACCESS_CODE'),
+                'merchant_reference'    => $this->module->currentOrder,
+                //'merchant_reference'    => $objOrder->reference,
+                'customer_email'        => $customer->email,
+                'command'               => Configuration::get('PAYFORT_FORT_COMMAND'),
+                'language'              => Configuration::get('PAYFORT_FORT_LANGUAGE'),
+                'return_url'            => $url
+            );
+            
+            
+            if ($cart->id_customer == 0 || $cart->id_address_delivery == 0 || $cart->id_address_invoice == 0)
+                Tools::redirect('index.php?controller=order&step=1');
+            
+            // Check that this payment option is still available in case the customer changed his address just before the end of the checkout process
+            $authorized = false;
+            foreach (Module::getPaymentModules() as $module)
+            if ($module['name'] == 'payfortfort')
+            {
+                $authorized = true;
+                break;
+            }
+            if (!$authorized)
+                die($this->module->l('This payment method is not available.', 'validation'));
+
+            //calculate request signature
+            $sha_string = '';
+            ksort($post_data);
+            foreach ($post_data as $k=>$v){
+                $sha_string .= "$k=$v";
+            }
+
+            $sha_string = Configuration::get('PAYFORT_FORT_REQUEST_SHA_PHRASE') . $sha_string . Configuration::get('PAYFORT_FORT_REQUEST_SHA_PHRASE');
+            $signature = hash(Configuration::get('PAYFORT_FORT_SHA_ALGORITHM') ,$sha_string);
+            
+            $form =  '<form style="display:none" name="payfortpaymentform" id="payfortpaymentform" method="post" action="'.$gateway_url.'">';
+            
+            foreach ($post_data as $k => $v){
+                $form .= '<input type="hidden" name="'.$k.'" value="'.$v.'">';
+            }
+            
+            $form .= '<input type="hidden" name="signature" value="'.$signature.'">';
+            $form .= '<input type="submit" value="" id="submit" name="submit2">';
+
             echo '<html>';
             echo '<head><script src="https://code.jquery.com/jquery-1.11.3.min.js"></script>';
             echo '</head>';
             echo '<body>';
             echo 'Redirecting to PayFort ....';
-            echo base64_decode($_POST['form']);
+            echo $form;
             echo '</body>';
             echo '<script>$(document).ready(function(){$("#payfortpaymentform input[type=submit]").click();})</script>';
             echo '</html>';
@@ -97,8 +164,6 @@ class PayfortfortPaymentModuleFrontController extends ModuleFrontController
                 else{
                     $success = true;
                     $cart = $this->context->cart;
-                    if ($cart->id_customer == 0 || $cart->id_address_delivery == 0 || $cart->id_address_invoice == 0 || !$this->module->active)
-                        Tools::redirect('index.php?controller=order&step=1');
 
                     // Check that this payment option is still available in case the customer changed his address just before the end of the checkout process
                     $authorized = false;
@@ -112,25 +177,26 @@ class PayfortfortPaymentModuleFrontController extends ModuleFrontController
                         die($this->module->l('This payment method is not available.', 'validation'));
 
                     $customer = new Customer($cart->id_customer);
+
                     if (!Validate::isLoadedObject($customer))
                         Tools::redirect('index.php?controller=order&step=1');
-
-                    $currency = $this->context->currency;
-                    $total = (float)$cart->getOrderTotal(true, Cart::BOTH);
+                    
                     $mailVars = array();
 
-                    $this->module->validateOrder($cart->id, Configuration::get('PAYFORT_FORT_HOLD_REVIEW_OS'), $total, $this->module->displayName, NULL, $mailVars, (int)$currency->id, false, $customer->secure_key);
-                    Tools::redirect('index.php?controller=order-confirmation&id_cart='.$cart->id.'&id_module='.$this->module->id.'&id_order='.$this->module->currentOrder.'&key='.$customer->secure_key);
+                    $objOrder = new Order($params['merchant_reference']);
+                    $history = new OrderHistory();
+                    $history->id_order = (int)$objOrder->id;
+                    $history->changeIdOrderState(Configuration::get('PAYFORT_FORT_HOLD_REVIEW_OS'), (int)($objOrder->id));
+
+                    Tools::redirect('index.php?controller=order-confirmation&id_cart='.$objOrder->id_cart.'&id_module='.$this->module->id.'&id_order='.$objOrder->id.'&key='.$customer->secure_key);
                 }
             }
             
             if (!$success){
-                //$this->module->validateOrder($cart->id, 6, $total, $this->module->displayName, NULL, $mailVars, (int)$currency->id, false, $customer->secure_key);
                 $objOrder = new Order($params['merchant_reference']);
                 $history = new OrderHistory();
                 $history->id_order = (int)$objOrder->id;
                 $history->changeIdOrderState(8, (int)($objOrder->id)); //order status=3
-                //Tools::redirect('index.php?controller=order&step=1');
                 Tools::redirect('index.php');
             }
             

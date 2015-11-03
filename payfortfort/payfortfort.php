@@ -202,84 +202,9 @@ class PayfortFORT extends PaymentModule {
     public function hookPayment($params) {
         $currency = Currency::getCurrencyInstance($this->context->cookie->id_currency);
         $isFailed = Tools::getValue('payfortforterror');
-        // if (method_exists('Tools', 'getShopDomainSsl'))
-            // $url = 'https://' . Tools::getShopDomainSsl() . __PS_BASE_URI__ . '/modules/' . $this->name . '/';
-        // else
-            // $url = 'http://' . $_SERVER['HTTP_HOST'] . __PS_BASE_URI__ . 'modules/' . $this->name . '/';
-        
-        //$url = _PS_BASE_URL_ . __PS_BASE_URI__ . 'modules/' . $this->name;
-        
+
         $url = _PS_BASE_URL_ . __PS_BASE_URI__ . 'index.php?fc=module&module=payfortfort&controller=payment';
-        
-        $sandbox_mode = Configuration::get('PAYFORT_FORT_SANDBOX_MODE');
-        
-        if ($sandbox_mode){
-            $gateway_url = 'https://sbcheckout.payfort.com/FortAPI/paymentPage';
-        }
-        else{
-            $gateway_url = 'https://checkout.payfort.com/FortAPI/paymentPage';
-        }
-        $cart = Context::getContext()->cart;
-        $customer = new Customer((int) $cart->id_customer);
-        $invoiceAddress = new Address((int) $cart->id_address_invoice);
-        $currency = new Currency((int) $cart->id_currency);
-        $amount = number_format((float) $cart->getOrderTotal(true, 3), 2, '.', '');
-        $amount_in_cents = $amount * 100;
-        $this->context->smarty->assign('email', $customer->email);
-        $this->context->smarty->assign('currency', $currency->iso_code);
-        $this->context->smarty->assign('amount', $amount_in_cents);
-        $this->context->smarty->assign('isFailed', $isFailed);
-        
-        $cart = $this->context->cart;
-     
-        $post_data = array(
-            'amount'                => $amount_in_cents,
-            'currency'              => strtoupper($currency->iso_code),
-            'merchant_identifier'   => Configuration::get('PAYFORT_FORT_MERCHANT_IDENTIFIER'),
-            'access_code'           => Configuration::get('PAYFORT_FORT_ACCESS_CODE'),
-            'merchant_reference'    => $cart->id,
-            'customer_email'        => $customer->email,
-            'command'               => Configuration::get('PAYFORT_FORT_COMMAND'),
-            'language'              => Configuration::get('PAYFORT_FORT_LANGUAGE'),
-            'return_url'            => $url
-        );
-        
-        
-        if ($cart->id_customer == 0 || $cart->id_address_delivery == 0 || $cart->id_address_invoice == 0)
-            Tools::redirect('index.php?controller=order&step=1');
-
-        // Check that this payment option is still available in case the customer changed his address just before the end of the checkout process
-        $authorized = false;
-        foreach (Module::getPaymentModules() as $module)
-        if ($module['name'] == 'payfortfort')
-        {
-            $authorized = true;
-            break;
-        }
-        if (!$authorized)
-            die($this->module->l('This payment method is not available.', 'validation'));
-
-        //calculate request signature
-        $sha_string = '';
-        ksort($post_data);
-        foreach ($post_data as $k=>$v){
-            $sha_string .= "$k=$v";
-        }
-
-        $sha_string = Configuration::get('PAYFORT_FORT_REQUEST_SHA_PHRASE') . $sha_string . Configuration::get('PAYFORT_FORT_REQUEST_SHA_PHRASE');
-        $signature = hash(Configuration::get('PAYFORT_FORT_SHA_ALGORITHM') ,$sha_string);
-        
-        $form =  '<form style="display:none" name="payfortpaymentform" id="payfortpaymentform" method="post" action="'.$gateway_url.'">';
-        
-        foreach ($post_data as $k => $v){
-            $form .= '<input type="hidden" name="'.$k.'" value="'.$v.'">';
-        }
-        
-        $form .= '<input type="hidden" name="signature" value="'.$signature.'">';
-        $form .= '<input type="submit" value="" id="submit" name="submit2">';
-
-        $this->context->smarty->assign('x_invoice_num', (int) $params['cart']->id);
-        $this->context->smarty->assign('payfort_form', base64_encode($form));
+   
         $this->context->smarty->assign('url', $url);
         return $this->display(__FILE__, 'views/templates/hook/payfortfort.tpl');
     }
